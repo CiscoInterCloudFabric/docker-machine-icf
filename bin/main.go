@@ -1,8 +1,8 @@
 package main
 
 import (
+	"github.com/CiscoInterCloudFabric/docker-machine-icf/icf"
 	"github.com/docker/machine/libmachine/drivers/plugin"
-	"github.com/joeswaminathan/docker-machine-icf/icf"
 )
 
 func main() {
