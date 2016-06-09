@@ -381,7 +381,7 @@ func (d *Driver) instanceIsRunning() bool {
 		log.Error("[ERROR] instanceIsRunning : Error = %v", err)
 	}
 	if st == state.Running {
-		log.Infof("[INFO] instanceIsRunning : Running")
+		log.Debugf("[DEBUG] instanceIsRunning : Running")
 		return true
 	}
 	log.Debugf("[DEBUG] instanceIsRunning : Not Running")
@@ -420,7 +420,7 @@ func (d *Driver) getSSHClientFromDriver() (ssh.Client, error) {
 		}
 	}
 
-	log.Infof("[INFO] Connecting to %s, as %s\n", address, d.GetSSHUsername())
+	log.Debugf("[DEBUG] Connecting to %s, as %s", address, d.GetSSHUsername())
 	client, err := ssh.NewClient(d.GetSSHUsername(), address, port, auth)
 	return client, err
 
@@ -432,7 +432,7 @@ func (d *Driver) runSSHCommandFromDriver(command string) (string, error) {
 		return "", err
 	}
 
-	log.Infof("[INFO] Executing via SSH,  Command:\n%s", command)
+	log.Debugf("[DEBUG] Executing via SSH,  Command:\n%s", command)
 
 	output, err := client.Output(command)
 	if err != nil {
@@ -448,7 +448,6 @@ output  : %s
 
 func (d *Driver) sshAvailableFunc() func() bool {
 	return func() bool {
-		log.Info("[INFO] Checking if ssh is available")
 		if _, err := d.runSSHCommandFromDriver("exit 0"); err != nil {
 			log.Infof("[ERROR] Error executing ssh command 'exit 0' : %s", err)
 			return false
@@ -459,6 +458,7 @@ func (d *Driver) sshAvailableFunc() func() bool {
 
 func (d *Driver) waitForSSH() error {
 	// Try to dial SSH for 30 seconds before timing out.
+	log.Info("[INFO] Checking if ssh is available")
 	if err := mcnutils.WaitFor(d.sshAvailableFunc()); err != nil {
 		return fmt.Errorf("Too many retries waiting for SSH to be available.  Last error: %s", err)
 	}
@@ -471,7 +471,7 @@ func (d *Driver) setKey(key string) error {
 		return err
 	}
 
-	log.Debugf("[INFO] Copying key : Key (%s)", key)
+	log.Debugf("[DEBUG] Copying key : Key (%s)", key)
 
 	cmd := "/usr/bin/echo " + strings.TrimSpace(key) + " > /home/" + d.SSHUser + "/.ssh/authorized_keys"
 	log.Debugf("[DEBUG] Remote Command is = %s", cmd)
@@ -499,10 +499,10 @@ func (d *Driver) createKeyPair() (err error) {
 			log.Error(err.Error())
 			return
 		}
-		log.Infof("[INFO] Generated Key : Path %s", d.GetSSHKeyPath())
+		log.Infof("[INFO] Generated Key ")
 		keyPath = d.GetSSHKeyPath()
 	} else {
-		log.Infof("Using ExistingKeyPair: %s", d.SSHPrivateKeyPath)
+		log.Infof("Using ExistingKeyPair from %s", d.SSHPrivateKeyPath)
 		if err = mcnutils.CopyFile(d.SSHPrivateKeyPath, d.GetSSHKeyPath()); err != nil {
 			err = fmt.Errorf("[ERROR] Error copying private Key in",
 				d.SSHPrivateKeyPath)
@@ -525,6 +525,7 @@ func (d *Driver) createKeyPair() (err error) {
 		log.Error(err.Error())
 		return
 	}
+	log.Infof("[INFO] Setting key ")
 	if err = d.setKey(string(publicKey)); err != nil {
 		err = fmt.Errorf("[ERROR] Error setting key: %v", err)
 		log.Error(err.Error())
