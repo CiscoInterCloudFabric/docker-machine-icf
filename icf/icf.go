@@ -400,48 +400,86 @@ const (
 	defaultRequestTimeout = 10 * time.Second
 )
 
-func (d *Driver) setKey(key string) error {
-
+func (d *Driver) getSSHClientFromDriver() (ssh.Client, error) {
 	address, err := d.GetSSHHostname()
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	log.Infof("[INFO] Copying key to %s", address)
 
 	port, err := d.GetSSHPort()
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	log.Infof("[INFO] Copying key : user (%s), password (%s)", d.GetSSHUsername(), d.SSHPassword)
 
 	var auth *ssh.Auth
-	auth = &ssh.Auth{
-		Passwords: []string{d.SSHPassword},
+	if d.GetSSHKeyPath() == "" {
+		auth = &ssh.Auth{}
+	} else {
+		auth = &ssh.Auth{
+			Keys: []string{d.GetSSHPassword()},
+		}
 	}
 
+	log.Infof("[INFO] Connecting to %s, as %s\n", address, d.GetSSHUsername())
 	client, err := ssh.NewClient(d.GetSSHUsername(), address, port, auth)
+	return client, err
+
+}
+
+func (d *Driver) runSSHCommandFromDriver(command string) (string, error) {
+	client, err := d.getSSHClientFromDriver()
 	if err != nil {
+		return "", err
+	}
+
+	log.Infof("[INFO] Executing via SSH,  Command:\n%s", command)
+
+	output, err := client.Output(command)
+	if err != nil {
+		return "", fmt.Errorf(`Something went wrong running an SSH command!
+command : %s
+err     : %v
+output  : %s
+`, command, err, output)
+	}
+
+	return output, nil
+}
+
+func (d *Driver) sshAvailableFunc() func() bool {
+	return func() bool {
+		log.Info("[INFO] Checking if ssh is available")
+		if _, err := d.runSSHCommandFromDriver("exit 0"); err != nil {
+			log.Infof("[ERROR] Error executing ssh command 'exit 0' : %s", err)
+			return false
+		}
+		return true
+	}
+}
+
+func (d *Driver) waitForSSH() error {
+	// Try to dial SSH for 30 seconds before timing out.
+	if err := mcnutils.WaitFor(d.sshAvailableFunc()); err != nil {
+		return fmt.Errorf("Too many retries waiting for SSH to be available.  Last error: %s", err)
+	}
+	return nil
+}
+
+func (d *Driver) setKey(key string) error {
+
+	if err := d.waitForSSH(); err != nil {
 		return err
 	}
 
 	log.Debugf("[INFO] Copying key : Key (%s)", key)
 
 	cmd := "/usr/bin/echo " + strings.TrimSpace(key) + " > /home/" + d.SSHUser + "/.ssh/authorized_keys"
-	//cmd := "/usr/bin/ls"
 	log.Debugf("[DEBUG] Remote Command is = %s", cmd)
 
-	output, err := client.Output(cmd)
-	log.Debugf("[DEBUG] SSH cmd, err: %v: output: %s", err, output)
+	_, err := d.runSSHCommandFromDriver(cmd)
 	if err != nil {
-		return fmt.Errorf(`Something went wrong running an SSH command!
-								       command : %s
-								       err     : %v
-								       output  : %s
-								       `, cmd, err, output)
+		log.Error(err.Error())
 	}
-
 	return err
 }
 
