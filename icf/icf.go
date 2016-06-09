@@ -1,16 +1,13 @@
 package icf
 
 import (
-	"bytes"
 	"crypto/md5"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -26,8 +23,9 @@ import (
 )
 
 const (
-	driverName     = "icf"
-	defaultSSHUser = "centos"
+	driverName         = "icf"
+	defaultSSHUser     = "centos"
+	defaultSSHPassword = "centos"
 )
 
 const (
@@ -59,6 +57,7 @@ type Driver struct {
 	InstanceId        string
 	KeyName           string
 	SSHPrivateKeyPath string
+	SSHPassword       string
 }
 
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
@@ -99,7 +98,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "ICF Network",
 			EnvVar: "ICF_NETWORK",
 		},
-		mcnflag.StringFlag{
+		mcnflag.BoolFlag{
 			Name:   "icf-provider-access",
 			Usage:  "ICF Provider Access",
 			EnvVar: "ICF_PROVIDER_ACCESS",
@@ -109,6 +108,12 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "Set the name of the ssh user",
 			Value:  defaultSSHUser,
 			EnvVar: "ICF_SSH_USER",
+		},
+		mcnflag.StringFlag{
+			Name:   "icf-ssh-password",
+			Usage:  "Set the password of the ssh user",
+			Value:  defaultSSHPassword,
+			EnvVar: "ICF_SSH_PASSWORD",
 		},
 	}
 }
@@ -122,6 +127,7 @@ func NewDriver(hostName, storePath string) *Driver {
 			MachineName: hostName,
 			StorePath:   storePath,
 		},
+		SSHPassword: defaultSSHPassword,
 	}
 
 	//log.StartLogger("docker-machine-icf", true)
@@ -141,7 +147,7 @@ func (d *Driver) config() (cfg *icf.Config) {
 		ServerCert: d.ServerCert,
 	}
 
-	//log.Debugf("[INFO] Server Cert = %s", d.ServerCert)
+	log.Debugf("[DEBUG] Server Cert = %s", d.ServerCert)
 	return
 }
 
@@ -178,6 +184,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Network = flags.String("icf-network")
 	d.ProviderAccess = flags.Bool("icf-provider-access")
 	d.SSHUser = flags.String("icf-ssh-user")
+	d.SSHPassword = flags.String("icf-ssh-password")
 
 	if d.Username == "" || d.Password == "" {
 		return errorMissingCredentials
@@ -251,7 +258,7 @@ func (d *Driver) Create() (err error) {
 	err = d.waitForInstance()
 	log.Infof("[INFO] Instance (%s) is ready", instance.Oid)
 
-	d.createKeyPair()
+	err = d.createKeyPair()
 	return
 }
 
@@ -320,16 +327,31 @@ func (d *Driver) GetSSHUsername() string {
 	return d.SSHUser
 }
 
+func (d *Driver) GetSSHPassword() string {
+	if d.SSHPassword == "" {
+		d.SSHPassword = defaultSSHUser
+	}
+
+	return d.SSHPassword
+}
+
 func (d *Driver) Start() error {
-	return d.waitForInstance()
+	log.Infof("[INFO] Start entered")
+	err := d.createKeyPair()
+	return err
+	//return d.waitForInstance()
 }
 
 func (d *Driver) Stop() error {
+	log.Infof("[INFO] Stop entered")
 	return d.waitForInstance()
 }
 
 func (d *Driver) Restart() error {
-	return d.waitForInstance()
+	log.Infof("[INFO] Restart entered")
+	err := d.createKeyPair()
+	return err
+	//return d.waitForInstance()
 }
 
 func (d *Driver) Kill() error {
@@ -362,7 +384,7 @@ func (d *Driver) instanceIsRunning() bool {
 		log.Infof("[INFO] instanceIsRunning : Running")
 		return true
 	}
-	//log.Debugf("[Debug] instanceIsRunning : Not Running")
+	log.Debugf("[DEBUG] instanceIsRunning : Not Running")
 	return false
 }
 
@@ -378,92 +400,100 @@ const (
 	defaultRequestTimeout = 10 * time.Second
 )
 
-func post(hostname string, path string, data []byte) (err error) {
-	var req *http.Request
-	var resp *http.Response
+func (d *Driver) setKey(key string) error {
 
-	hclient := &http.Client{Timeout: defaultRequestTimeout}
-	url := "http://" + hostname + ":8787" + path
-	//log.Debugf("[Debug] Posting url(%s) data(%s)", url, string(data))
-	if req, err = http.NewRequest("POST", url, bytes.NewBuffer(data)); err != nil {
-		return
-	}
-	req.Header.Add("Content-Type", "application/json")
-	if resp, err = hclient.Do(req); err != nil {
-		log.Error("[ERROR] post : Error = %v", err)
-		return
-	}
-	sc := resp.StatusCode
-	status := resp.Status
-	if data, err = ioutil.ReadAll(resp.Body); err == nil {
-		/* log.Debugf("[Debug] Response sc(%d) status(%s) msg (%s)",
-		sc, status, string(data)) */
-	}
-	if sc >= 300 || sc < 100 {
-		err = fmt.Errorf("%s", status)
-		return
+	address, err := d.GetSSHHostname()
+	if err != nil {
+		return err
 	}
 
-	return
+	log.Infof("[INFO] Copying key to %s", address)
+
+	port, err := d.GetSSHPort()
+	if err != nil {
+		return err
+	}
+
+	log.Infof("[INFO] Copying key : user (%s), password (%s)", d.GetSSHUsername(), d.SSHPassword)
+
+	var auth *ssh.Auth
+	auth = &ssh.Auth{
+		Passwords: []string{d.SSHPassword},
+	}
+
+	client, err := ssh.NewClient(d.GetSSHUsername(), address, port, auth)
+	if err != nil {
+		return err
+	}
+
+	log.Debugf("[INFO] Copying key : Key (%s)", key)
+
+	cmd := "/usr/bin/echo " + strings.TrimSpace(key) + " > /home/" + d.SSHUser + "/.ssh/authorized_keys"
+	//cmd := "/usr/bin/ls"
+	log.Debugf("[DEBUG] Remote Command is = %s", cmd)
+
+	output, err := client.Output(cmd)
+	log.Debugf("[DEBUG] SSH cmd, err: %v: output: %s", err, output)
+	if err != nil {
+		return fmt.Errorf(`Something went wrong running an SSH command!
+								       command : %s
+								       err     : %v
+								       output  : %s
+								       `, cmd, err, output)
+	}
+
+	return err
 }
 
-func (d *Driver) createKeyPair() error {
+func (d *Driver) createKeyPair() (err error) {
 	type authKeyInfo struct {
 		User string `json:"user"`
 		Key  string `json:"key"`
 	}
-	log.Debugf("[Debug] createKey : Entered")
+	log.Debugf("[DEBUG] createKey : Entered")
 
 	keyPath := ""
 
 	if d.SSHPrivateKeyPath == "" {
-		log.Infof("[INFO] createKey : Creating New SSH Key in ", d.GetSSHKeyPath())
-		if err := ssh.GenerateSSHKey(d.GetSSHKeyPath()); err != nil {
-			return err
+		log.Infof("[INFO] Creating New SSH Key in %s", d.GetSSHKeyPath())
+		if err = ssh.GenerateSSHKey(d.GetSSHKeyPath()); err != nil {
+			err = fmt.Errorf("[ERROR] Error generating SSH Key : %v", err)
+			log.Error(err.Error())
+			return
 		}
-		log.Infof("[INFO] createKey : Generated Key : Path %s", d.GetSSHKeyPath())
+		log.Infof("[INFO] Generated Key : Path %s", d.GetSSHKeyPath())
 		keyPath = d.GetSSHKeyPath()
 	} else {
-		log.Infof("createKey : Using ExistingKeyPair: %s", d.SSHPrivateKeyPath)
-		if err := mcnutils.CopyFile(d.SSHPrivateKeyPath, d.GetSSHKeyPath()); err != nil {
-			log.Error("[ERROR] createKey : Error copying private Key in", d.SSHPrivateKeyPath)
-			return err
+		log.Infof("Using ExistingKeyPair: %s", d.SSHPrivateKeyPath)
+		if err = mcnutils.CopyFile(d.SSHPrivateKeyPath, d.GetSSHKeyPath()); err != nil {
+			err = fmt.Errorf("[ERROR] Error copying private Key in",
+				d.SSHPrivateKeyPath)
+			log.Error(err.Error())
+			return
 		}
-		if err := mcnutils.CopyFile(d.SSHPrivateKeyPath+".pub", d.GetSSHKeyPath()+".pub"); err != nil {
-			log.Error("[ERROR] createKey : Error copying public Key in", d.SSHPrivateKeyPath)
-			return err
+		if err = mcnutils.CopyFile(d.SSHPrivateKeyPath+".pub", d.GetSSHKeyPath()+".pub"); err != nil {
+			err = fmt.Errorf("[ERROR] createKey : Error copying public Key in",
+				d.SSHPrivateKeyPath)
+			log.Error(err.Error())
+			return
 		}
 		keyPath = d.SSHPrivateKeyPath
 	}
 
-	publicKey, err := ioutil.ReadFile(keyPath + ".pub")
+	var publicKey []byte
+	publicKey, err = ioutil.ReadFile(keyPath + ".pub")
 	if err != nil {
-		log.Error("[ERROR] createKey : Unable to read Key file: %s", keyPath)
-		return err
+		err = fmt.Errorf("[ERROR] Unable to read Key file: %s", keyPath)
+		log.Error(err.Error())
+		return
+	}
+	if err = d.setKey(string(publicKey)); err != nil {
+		err = fmt.Errorf("[ERROR] Error setting key: %v", err)
+		log.Error(err.Error())
+		return
 	}
 
-	authKey := &authKeyInfo{
-		User: d.GetSSHUsername(),
-		Key:  string(publicKey),
-	}
-
-	var data []byte
-	var hostname string
-
-	data, err = json.Marshal(&authKey)
-	if err != nil {
-		log.Error("[ERROR] createKey : Unable to Marshal: %v", authKey)
-		return err
-	}
-	log.Debugf("[Debug] createKey : Setting Key (%s)", string(data))
-
-	time.Sleep(time.Second * 20)
-	hostname, err = d.GetSSHHostname()
-	if err = post(hostname, "/api/authkey", data); err != nil {
-		log.Error("[ERROR] createKey : Error setting key: %v", err)
-		return err
-	}
-	log.Debugf("[Debug] createKey : Success")
+	log.Debugf("[DEBUG] createKey : Success")
 	return nil
 }
 
