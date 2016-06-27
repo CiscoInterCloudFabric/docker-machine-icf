@@ -3,8 +3,9 @@ Cisco ICF Docker Machine plugin
 
 # Build
 
-cd bin
-make
+make -C bin
+
+sudo mv bin/docker-machine-driver-icf $(dirname `which docker-machine`)
 
 # RUN
 
@@ -40,4 +41,15 @@ make
 10. --icf-ssh-password [$ICF_SSH_PASSWORD]
 
    Linux User password of the VM (based on Catalog)
+
+## Create VM
+
+   Set all the environment variables described above
+
+   docker-machine create --driver icf <name of vm>
+
+## Delete VM
+
+   docker-machine delete <name of VM>
+
 
