@@ -465,6 +465,24 @@ func (d *Driver) waitForSSH() error {
 	return nil
 }
 
+func (d *Driver) disableKernelUpdate() error {
+
+	if err := d.waitForSSH(); err != nil {
+		return err
+	}
+
+	log.Debugf("[DEBUG] Disabling kernel updates")
+
+	cmd := "/usr/bin/echo " + "exclude=centos-release* redhat-release* kernel*" + " >> /etc/yum.conf"
+	log.Debugf("[DEBUG] Remote Command is = %s", cmd)
+
+	_, err := d.runSSHCommandFromDriver(cmd)
+	if err != nil {
+		log.Error(err.Error())
+	}
+	return err
+}
+
 func (d *Driver) setKey(key string) error {
 
 	if err := d.waitForSSH(); err != nil {
@@ -473,7 +491,7 @@ func (d *Driver) setKey(key string) error {
 
 	log.Debugf("[DEBUG] Copying key : Key (%s)", key)
 
-	cmd := "/usr/bin/echo " + strings.TrimSpace(key) + " > /home/" + d.SSHUser + "/.ssh/authorized_keys"
+	cmd := "/usr/bin/echo " + strings.TrimSpace(key) + " >> /home/" + d.SSHUser + "/.ssh/authorized_keys"
 	log.Debugf("[DEBUG] Remote Command is = %s", cmd)
 
 	_, err := d.runSSHCommandFromDriver(cmd)
@@ -531,8 +549,16 @@ func (d *Driver) createKeyPair() (err error) {
 		log.Error(err.Error())
 		return
 	}
-
 	log.Debugf("[DEBUG] createKey : Success")
+
+	log.Debugf("[INFO] Disabling Kernel Update")
+	if err = d.disableKernelUpdate(); err != nil {
+		err = fmt.Errorf("[ERROR] Error disabling Kernel updates: %v", err)
+		log.Error(err.Error())
+		return
+	}
+	log.Debugf("[DEBUG] Disable Kernel Update : Success")
+
 	return nil
 }
 
