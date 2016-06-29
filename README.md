@@ -23,6 +23,9 @@ sudo mv bin/docker-machine-driver-icf $(dirname `which docker-machine`)
 4. --icf-server-cert [$ICF_SERVER_CERT]
 
    HTTPS Server Certificate of Cisco Intercloud For Business
+   
+>   export ICF_SERVER_CERT=$(keytool -printcert --rfc -sslserver $ICF_SERVER:443)
+
 5. --icf-vdc [$ICF_VDC]
 
    UUID of VDC assigned to the tenant
