@@ -472,6 +472,24 @@ func (d *Driver) waitForSSH() error {
 	return nil
 }
 
+func (d *Driver) disableFirewall() error {
+
+	if err := d.waitForSSH(); err != nil {
+		return err
+	}
+
+	log.Debugf("[DEBUG] Disabling Firewall")
+
+	cmd := "/usr/bin/systemctl stop firewalld; /usr/bin/systemctl disable firewalld"
+	log.Debugf("[DEBUG] Remote Command is = %s", cmd)
+
+	_, err := d.runSSHCommandFromDriver(cmd)
+	if err != nil {
+		log.Error(err.Error())
+	}
+	return err
+}
+
 func (d *Driver) disableKernelUpdate() error {
 
 	if err := d.waitForSSH(); err != nil {
@@ -570,6 +588,14 @@ func (d *Driver) createKeyPair() (err error) {
 		return
 	}
 	log.Debugf("[DEBUG] Disable Kernel Update : Success")
+
+	log.Debugf("[INFO] Disabling Firewall")
+	if err = d.disableFirewall(); err != nil {
+		err = fmt.Errorf("[ERROR] Error disabling Firewall: %v", err)
+		log.Error(err.Error())
+		return
+	}
+	log.Debugf("[DEBUG] Disable Firewall : Success")
 
 	return nil
 }
