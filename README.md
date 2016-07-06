@@ -55,4 +55,6 @@ sudo mv bin/docker-machine-driver-icf $(dirname `which docker-machine`)
 
    docker-machine delete <name of VM>
 
+# Requirements
 
+Requires ssh client and sshpass utilities to be present
