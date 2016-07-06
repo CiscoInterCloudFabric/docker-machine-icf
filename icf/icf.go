@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/url"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -329,7 +330,7 @@ func (d *Driver) GetSSHUsername() string {
 
 func (d *Driver) GetSSHPassword() string {
 	if d.SSHPassword == "" {
-		d.SSHPassword = defaultSSHUser
+		d.SSHPassword = defaultSSHPassword
 	}
 
 	return d.SSHPassword
@@ -337,9 +338,9 @@ func (d *Driver) GetSSHPassword() string {
 
 func (d *Driver) Start() error {
 	log.Infof("[INFO] Start entered")
-	err := d.createKeyPair()
-	return err
-	//return d.waitForInstance()
+	//err := d.createKeyPair()
+	//return err
+	return d.waitForInstance()
 }
 
 func (d *Driver) Stop() error {
@@ -349,9 +350,9 @@ func (d *Driver) Stop() error {
 
 func (d *Driver) Restart() error {
 	log.Infof("[INFO] Restart entered")
-	err := d.createKeyPair()
-	return err
-	//return d.waitForInstance()
+	//err := d.createKeyPair()
+	//return err
+	return d.waitForInstance()
 }
 
 func (d *Driver) Kill() error {
@@ -400,7 +401,7 @@ const (
 	defaultRequestTimeout = 10 * time.Second
 )
 
-func (d *Driver) getSSHClientFromDriver() (ssh.Client, error) {
+func (d *Driver) getSSHCommandFromDriver(command string) (*exec.Cmd, error) {
 	address, err := d.GetSSHHostname()
 	if err != nil {
 		return nil, err
@@ -411,39 +412,45 @@ func (d *Driver) getSSHClientFromDriver() (ssh.Client, error) {
 		return nil, err
 	}
 
-	var auth *ssh.Auth
-	if d.GetSSHKeyPath() == "" {
-		auth = &ssh.Auth{}
-	} else {
-		auth = &ssh.Auth{
-			Keys: []string{d.GetSSHPassword()},
-		}
+	sshBinaryPath, err := exec.LookPath("ssh")
+	if err != nil {
+		log.Error(err.Error())
+		return nil, err
 	}
 
-	log.Debugf("[DEBUG] Connecting to %s, as %s", address, d.GetSSHUsername())
-	client, err := ssh.NewClient(d.GetSSHUsername(), address, port, auth)
-	return client, err
+	sshpassBinaryPath, err := exec.LookPath("sshpass")
+	if err != nil {
+		log.Error(err.Error())
+		return nil, err
+	}
+
+	log.Infof("[DEBUG] Connecting to %s, as %s", address, d.GetSSHUsername())
+	cmd := exec.Command(sshpassBinaryPath, "-p", d.GetSSHPassword(), sshBinaryPath,
+		"-o", "StrictHostKeyChecking=no", "-l", d.GetSSHUsername(), "-p", fmt.Sprintf("%d", port),
+		address, command)
+	return cmd, err
 
 }
 
 func (d *Driver) runSSHCommandFromDriver(command string) (string, error) {
-	client, err := d.getSSHClientFromDriver()
+	cmd, err := d.getSSHCommandFromDriver(command)
 	if err != nil {
+		log.Infof("[DEBUG] Error in d.getSSHClientFromDriver (%v)", err)
 		return "", err
 	}
 
-	log.Debugf("[DEBUG] Executing via SSH,  Command:\n%s", command)
+	log.Infof("[DEBUG] Executing via SSH,  Command:%v", cmd)
 
-	output, err := client.Output(command)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf(`Something went wrong running an SSH command!
 command : %s
 err     : %v
 output  : %s
-`, command, err, output)
+`, command, err, string(output))
 	}
 
-	return output, nil
+	return string(output), nil
 }
 
 func (d *Driver) sshAvailableFunc() func() bool {
@@ -491,7 +498,12 @@ func (d *Driver) setKey(key string) error {
 
 	log.Debugf("[DEBUG] Copying key : Key (%s)", key)
 
-	cmd := "/usr/bin/echo " + strings.TrimSpace(key) + " >> /home/" + d.SSHUser + "/.ssh/authorized_keys"
+	homedir := "/home/"
+	if strings.Compare(d.SSHUser, "root") == 0 {
+		homedir = "/"
+	}
+
+	cmd := "/usr/bin/echo " + strings.TrimSpace(key) + " >> " + homedir + d.SSHUser + "/.ssh/authorized_keys"
 	log.Debugf("[DEBUG] Remote Command is = %s", cmd)
 
 	_, err := d.runSSHCommandFromDriver(cmd)
