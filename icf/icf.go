@@ -108,13 +108,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		mcnflag.StringFlag{
 			Name:   "icf-ssh-username",
 			Usage:  "Set the name of the ssh user",
-			Value:  defaultSSHUser,
 			EnvVar: "ICF_SSH_USER",
 		},
 		mcnflag.StringFlag{
 			Name:   "icf-ssh-password",
 			Usage:  "Set the password of the ssh user",
-			Value:  defaultSSHPassword,
 			EnvVar: "ICF_SSH_PASSWORD",
 		},
 	}
@@ -125,11 +123,9 @@ func NewDriver(hostName, storePath string) *Driver {
 	driver := &Driver{
 		Id: id,
 		BaseDriver: &drivers.BaseDriver{
-			SSHUser:     defaultSSHUser,
 			MachineName: hostName,
 			StorePath:   storePath,
 		},
-		SSHPassword: defaultSSHPassword,
 	}
 
 	//log.StartLogger("docker-machine-icf", true)
@@ -350,23 +346,23 @@ func (d *Driver) Start() error {
 	log.Infof("[INFO] Start entered")
 	//err := d.createKeyPair()
 	//return err
-	return d.waitForInstance()
+	return fmt.Errorf("Unsupported operation")
 }
 
 func (d *Driver) Stop() error {
 	log.Infof("[INFO] Stop entered")
-	return d.waitForInstance()
+	return fmt.Errorf("Unsupported operation")
 }
 
 func (d *Driver) Restart() error {
 	log.Infof("[INFO] Restart entered")
 	//err := d.createKeyPair()
 	//return err
-	return d.waitForInstance()
+	return fmt.Errorf("Unsupported operation")
 }
 
 func (d *Driver) Kill() error {
-	return d.waitForInstance()
+	return fmt.Errorf("Unsupported operation")
 }
 
 func (d *Driver) Remove() error {
