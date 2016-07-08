@@ -34,14 +34,15 @@ const (
 )
 
 var (
-	dockerPort              = 2376
-	swarmPort               = 3376
-	errorMissingCredentials = errors.New("icf driver requires username & password")
-	errorMissingIcfServer   = errors.New("icf driver requires IP address")
-	errorMissingVdc         = errors.New("icf driver requires VDC ID")
-	errorMissingCatalog     = errors.New("icf driver requires Catalog ID")
-	errorMissingNetwork     = errors.New("icf driver requires Network ID")
-	errorMissingSshUser     = errors.New("icf driver requires ssh username")
+	dockerPort                = 2376
+	swarmPort                 = 3376
+	errorMissingCredentials   = errors.New("icf driver requires ICFB credentials (--icf-user and --icf-password)")
+	errorMissingIcfServer     = errors.New("icf driver requires ICFB IP address (--icf-server)")
+	errorMissingServerCert    = errors.New("icf driver requires ICFB Server Certificate (--icf-server-cert)")
+	errorMissingVdc           = errors.New("icf driver requires VDC ID (--icf-vdc)")
+	errorMissingCatalog       = errors.New("icf driver requires Catalog ID (--icf-catalog)")
+	errorMissingNetwork       = errors.New("icf driver requires Network ID (--icf-network)")
+	errorMissingVMCredentials = errors.New("icf driver requires VM Credentials (--icf-ssh-username and --icf-ssh-password)")
 )
 
 type Driver struct {
@@ -105,7 +106,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "ICF_PROVIDER_ACCESS",
 		},
 		mcnflag.StringFlag{
-			Name:   "icf-ssh-user",
+			Name:   "icf-ssh-username",
 			Usage:  "Set the name of the ssh user",
 			Value:  defaultSSHUser,
 			EnvVar: "ICF_SSH_USER",
@@ -184,7 +185,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Catalog = flags.String("icf-catalog")
 	d.Network = flags.String("icf-network")
 	d.ProviderAccess = flags.Bool("icf-provider-access")
-	d.SSHUser = flags.String("icf-ssh-user")
+	d.SSHUser = flags.String("icf-ssh-username")
 	d.SSHPassword = flags.String("icf-ssh-password")
 
 	if d.Username == "" || d.Password == "" {
@@ -193,6 +194,10 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 
 	if d.Server == "" {
 		return errorMissingIcfServer
+	}
+
+	if d.ServerCert == "" {
+		return errorMissingServerCert
 	}
 
 	if d.Vdc == "" {
@@ -207,8 +212,8 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 		return errorMissingNetwork
 	}
 
-	if d.SSHUser == "" {
-		return errorMissingSshUser
+	if d.SSHUser == "" || d.SSHPassword == "" {
+		return errorMissingVMCredentials
 	}
 
 	if d.isSwarmMaster() {
@@ -260,7 +265,12 @@ func (d *Driver) Create() (err error) {
 	log.Infof("[INFO] Instance (%s) is ready", instance.Oid)
 
 	err = d.createKeyPair()
-	return
+	/*
+		if err != nil {
+			d.Remove()
+		}
+	*/
+	return nil /* docker-machine doesn't learn IP address on failure preventing rm */
 }
 
 func (d *Driver) GetURL() (string, error) {
@@ -573,6 +583,7 @@ func (d *Driver) createKeyPair() (err error) {
 		log.Error(err.Error())
 		return
 	}
+
 	log.Infof("[INFO] Setting key ")
 	if err = d.setKey(string(publicKey)); err != nil {
 		err = fmt.Errorf("[ERROR] Error setting key: %v", err)
