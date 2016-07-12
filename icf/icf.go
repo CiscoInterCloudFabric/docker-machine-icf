@@ -36,7 +36,7 @@ const (
 var (
 	dockerPort                = 2376
 	swarmPort                 = 3376
-	errorMissingCredentials   = errors.New("icf driver requires ICFB credentials (--icf-user and --icf-password)")
+	errorMissingCredentials   = errors.New("icf driver requires ICFB credentials (--icf-username and --icf-password)")
 	errorMissingIcfServer     = errors.New("icf driver requires ICFB IP address (--icf-server)")
 	errorMissingServerCert    = errors.New("icf driver requires ICFB Server Certificate (--icf-server-cert)")
 	errorMissingVdc           = errors.New("icf driver requires VDC ID (--icf-vdc)")
